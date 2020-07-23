@@ -53,7 +53,8 @@
 #include <crt0.h>
 
 
-#define VERSION 0.36
+#define VERSION_MAJOR 0
+#define VERSION_MINOR 36
 
 #define STAT_PORT (port+1)
 #define CTRL_PORT (port+2)
@@ -550,7 +551,7 @@ int main(int argc, char **argv)
     int machine;
     int video_standard;
 
-    printf("\nmtap - Commodore TAP file Generator v%.2f\n\n", VERSION);
+    printf("\nmtap - Commodore TAP file Generator v%d.%02d\n\n", VERSION_MAJOR, VERSION_MINOR);
 
     lptnum = 1;
     cable = ADAPTER;
