@@ -122,6 +122,7 @@ void usage(void)
     fprintf(stderr, "  -xe:      use XE1541 cable for transfer\n");
     fprintf(stderr, "  -b:       increase buffer size (default: 4 MB)\n");
     fprintf(stderr, "  -h:       halfwaves\n");
+    fprintf(stderr, "  -r:       write raw sample data to <output file>.raw (for debugging)\n");
     fprintf(stderr, "  -v:       record Version 0 TAP\n");
     fprintf(stderr, "  -vicntsc: record VIC-20 NTSC tape\n");
     fprintf(stderr, "  -vicpal:  record VIC-20 PAL  tape\n");
@@ -534,6 +535,29 @@ void write_longpulse(long long int longpulse, FILE *fpout)
 }
 
 
+void write_raw_samples(char *outname, unsigned char *buffer, long long int len)
+{
+    char rawname[100];
+    FILE *rawout;
+
+    strcpy(rawname, outname);
+    set_file_extension(rawname, ".RAW");
+
+    if ((rawout = fopen(rawname, "wb")) == NULL)
+    {
+        fprintf(stderr, "Couldn't open raw sample file %s!\n", rawname);
+        return;
+    }
+
+    if (fwrite(buffer, 1, len, rawout) != len)
+    {
+        fprintf(stderr, "Error writing raw samples!\n");
+    }
+
+    fclose(rawout);
+}
+
+
 int main(int argc, char **argv)
 {
     FILE *fpout;
@@ -550,6 +574,7 @@ int main(int argc, char **argv)
     int port;
     int machine;
     int video_standard;
+    int write_raw;
 
     printf("\nmtap - Commodore TAP file Generator v%d.%02d\n\n", VERSION_MAJOR, VERSION_MINOR);
 
@@ -559,6 +584,7 @@ int main(int argc, char **argv)
     frequency = C64PALFREQ;
     machine = C64;
     video_standard = PAL;
+    write_raw = 0;
     while (--argc && (*(++argv)[0] == '-'))
     {
         switch (tolower((*argv)[1]))
@@ -610,6 +636,9 @@ int main(int argc, char **argv)
                 lptnum = atoi(*argv+4);
                 printf("lptnum: %d\n", lptnum);
                 if ((lptnum < 1) || (lptnum > 4)) usage();
+                break;
+            case 'r':
+                write_raw = 1; /* write raw sample data to *.RAW file */
                 break;
             case 'v':
                 if (argcmp(*argv,"-vicpal"))
@@ -699,6 +728,8 @@ int main(int argc, char **argv)
         fprintf(stderr, "No pulses recorded\n");
         exit(4);
     }
+    if (write_raw)
+        write_raw_samples(outname, buffer, bufferp-buffer);
 
     printf("pulses recorded = %x\n", pulsbytes);
     if (machine == C16)
