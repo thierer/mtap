@@ -115,12 +115,13 @@ static char rcsid[] = "$Id: mtap.c,v 0.36 2002/06/09 10:44:26 brenner Exp $";
 
 void usage(void)
 {
-    fprintf(stderr, "usage: mtap [-lpt] [-x[e]] [-buffer <size>] [-v] <tap output file>\n");
+    fprintf(stderr, "usage: mtap [-lpt] [-x[e]] [-buffer <size>] [-f<freq>] [-v] <tap output file>\n");
     fprintf(stderr, "  -lpt<x>:  use parallel port x (default: lpt1)\n");
     fprintf(stderr, "  -x:       use X1541  cable for transfer\n");
     fprintf(stderr, "  -xa:      use XA1541 cable for transfer\n");
     fprintf(stderr, "  -xe:      use XE1541 cable for transfer\n");
     fprintf(stderr, "  -b:       increase buffer size (default: 4 MB)\n");
+    fprintf(stderr, "  -f<freq>: custom frequency <freq> (in Hz) to use for analysis\n");    
     fprintf(stderr, "  -h:       halfwaves\n");
     fprintf(stderr, "  -r:       write raw sample data to <output file>.raw (for debugging)\n");
     fprintf(stderr, "  -v:       record Version 0 TAP\n");
@@ -535,6 +536,39 @@ void write_longpulse(long long int longpulse, FILE *fpout)
 }
 
 
+void log_used_frequency(unsigned long int frequency)
+{
+    char *machine_str;
+
+    switch (frequency)
+    {
+        case C64PALFREQ:
+            machine_str = "C64 PAL";
+            break;
+        case C64NTSCFREQ:
+#if C64NTSCFREQ != VICNTSCFREQ
+        case VICNTSCFREQ:
+#endif        
+            machine_str = "VIC-20/C64 NTSC";
+            break;
+        case VICPALFREQ:
+            machine_str = "VIC-20 PAL";
+            break;
+        case C16PALFREQ:
+            machine_str = "C16 PAL";
+            break;
+        case C16NTSCFREQ:
+            machine_str = "C16 NTSC";
+            break;
+        default:
+            machine_str = "custom";
+            break;
+    }
+
+    printf("using reference frequency of %d Hz (%s)\n", frequency, machine_str);
+}
+
+
 void write_raw_samples(char *outname, unsigned char *buffer, long long int len)
 {
     char rawname[100];
@@ -581,7 +615,7 @@ int main(int argc, char **argv)
     lptnum = 1;
     cable = ADAPTER;
     tapvers = 1;
-    frequency = C64PALFREQ;
+    frequency = 0;
     machine = C64;
     video_standard = PAL;
     write_raw = 0;
@@ -603,30 +637,42 @@ int main(int argc, char **argv)
                 if (argcmp(*argv,"-c64pal"))
                 {
                     printf("recording from C64 PAL tape\n");
-                    frequency = C64PALFREQ;
+                    if (frequency == 0)
+                        frequency = C64PALFREQ;
                     machine = C64;
                     video_standard = PAL;
                 }
                 else if (argcmp(*argv,"-c64ntsc"))
                 {
                     printf("recording from C64 NTSC tape\n");
-                    frequency = C64NTSCFREQ;
+                    if (frequency == 0)
+                        frequency = C64NTSCFREQ;
                     machine = C64;
                     video_standard = NTSC;
                 }
                 else if (argcmp(*argv,"-c16pal"))
                 {
                     printf("recording from C16 PAL tape\n");
-                    frequency = C16PALFREQ;
+                    if (frequency == 0)
+                        frequency = C16PALFREQ;
                     machine = C16;
                     video_standard = PAL;
                 }
                 else if (argcmp(*argv,"-c16ntsc"))
                 {
                     printf("recording from C16 NTSC tape\n");
-                    frequency = C16NTSCFREQ;
+                    if (frequency == 0)
+                        frequency = C16NTSCFREQ;
                     machine = C16;
                     video_standard = NTSC;
+                }
+                break;
+            case 'f':
+                frequency = atol(*argv+2);
+                if (frequency == 0)
+                {
+                    fprintf(stderr, "Invalid frequency\n");
+                    exit(3);
                 }
                 break;
             case 'h':
@@ -644,14 +690,16 @@ int main(int argc, char **argv)
                 if (argcmp(*argv,"-vicpal"))
                 {
                     printf("recording from VIC-20 PAL tape\n");
-                    frequency = VICPALFREQ;
+                    if (frequency == 0)
+                        frequency = VICPALFREQ;
                     machine = VIC;
                     video_standard = PAL;
                 }
                 else if (argcmp(*argv,"-vicntsc"))
                 {
                     printf("recording from VIC-20 NTSC tape\n");
-                    frequency = VICNTSCFREQ;
+                    if (frequency == 0)
+                        frequency = VICNTSCFREQ;
                     machine = VIC;
                     video_standard = NTSC;
                 }
@@ -705,6 +753,12 @@ int main(int argc, char **argv)
         fprintf(stderr, "Couldn't allocate buffer memory!\n");
         exit(3);
     }
+
+    /* Use C64 PAL frequency as default if not set by an option */
+    if (frequency == 0)
+        frequency = C64PALFREQ;
+
+    log_used_frequency(frequency);
 
     init_border_colors();
 
