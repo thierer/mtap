@@ -115,7 +115,7 @@ static char rcsid[] = "$Id: mtap.c,v 0.36 2002/06/09 10:44:26 brenner Exp $";
 
 void usage(void)
 {
-    fprintf(stderr, "usage: mtap [-lpt] [-x[e]] [-buffer <size>] [-f<freq>] [-v] <tap output file>\n");
+    fprintf(stderr, "usage: mtap [-lpt] [-x[e]] [-buffer <size>] [-f<freq>] [-i<file>] [-r] [-v] <tap output file>\n");
     fprintf(stderr, "  -lpt<x>:  use parallel port x (default: lpt1)\n");
     fprintf(stderr, "  -x:       use X1541  cable for transfer\n");
     fprintf(stderr, "  -xa:      use XA1541 cable for transfer\n");
@@ -123,7 +123,8 @@ void usage(void)
     fprintf(stderr, "  -b:       increase buffer size (default: 4 MB)\n");
     fprintf(stderr, "  -f<freq>: custom frequency <freq> (in Hz) to use for analysis\n");    
     fprintf(stderr, "  -h:       halfwaves\n");
-    fprintf(stderr, "  -r:       write raw sample data to <output file>.raw (for debugging)\n");
+    fprintf(stderr, "  -i<file>: read sample data from <file> instead of recording\n");
+    fprintf(stderr, "  -r:       write sample data to <output file>.raw\n");
     fprintf(stderr, "  -v:       record Version 0 TAP\n");
     fprintf(stderr, "  -vicntsc: record VIC-20 NTSC tape\n");
     fprintf(stderr, "  -vicpal:  record VIC-20 PAL  tape\n");
@@ -569,6 +570,42 @@ void log_used_frequency(unsigned long int frequency)
 }
 
 
+char *read_raw_samples(char *inname, unsigned char *buffer, long long int len)
+{
+    FILE *rawin;
+    long filelen;
+
+    if ((rawin = fopen(inname, "rb")) == NULL)
+    {
+        fprintf(stderr, "Couldn't open raw sample file %s!\n", inname);
+        return buffer;
+    }
+
+    if (fseek(rawin, 0, SEEK_END) != 0)
+    {
+        fprintf(stderr, "Error getting size of sample file!\n");
+        return buffer;
+    }
+
+    filelen = ftell(rawin);
+
+    if (filelen > len) 
+    {
+        fprintf(stderr, "Buffer too small (need %d byte)\n", filelen);
+        return buffer;
+    }
+
+    fseek(rawin, 0, SEEK_SET);
+    if (fread(buffer, 1, filelen, rawin) != filelen)
+    {
+        fprintf(stderr, "Error reading raw samples\n");
+        return buffer;
+    }
+
+    return buffer + filelen;
+}
+
+
 void write_raw_samples(char *outname, unsigned char *buffer, long long int len)
 {
     char rawname[100];
@@ -601,6 +638,7 @@ int main(int argc, char **argv)
     long long int longpulse;
     unsigned long int frequency;
     unsigned char *buffer, *bufferp;
+    char inname[100];
     char outname[100];
     char input[100];
     int i;
@@ -619,6 +657,7 @@ int main(int argc, char **argv)
     machine = C64;
     video_standard = PAL;
     write_raw = 0;
+    inname[0] = '\0';
     while (--argc && (*(++argv)[0] == '-'))
     {
         switch (tolower((*argv)[1]))
@@ -678,6 +717,15 @@ int main(int argc, char **argv)
             case 'h':
                 tapvers = 2; /* enable halfwave recording */
                 break;
+            case 'i':
+                if (strlen(*argv) < 3)
+                {
+                    fprintf(stderr, "No Filename specified for Option -i\n");
+                    exit(3);
+                }
+                strcpy(inname, *argv+2);
+                printf("reading sample data from %s\n", inname);
+                break;
             case 'l':
                 lptnum = atoi(*argv+4);
                 printf("lptnum: %d\n", lptnum);
@@ -720,13 +768,11 @@ int main(int argc, char **argv)
     }
     if (argc < 1) usage();
 
-    port = find_port(lptnum);
-    if (port == 0)
+    if ((buffer = calloc(buffersize, sizeof(char))) == NULL)
     {
-        fprintf(stderr, "LPT%d doesn't exist on your machine!\n", lptnum);
-        exit(1);
+        fprintf(stderr, "Couldn't allocate buffer memory!\n");
+        exit(3);
     }
-    else printf("Using port LPT%d at %04x\n",lptnum,port);
 
     strcpy(outname, argv[0]);
     set_file_extension(outname, ".TAP");
@@ -742,37 +788,47 @@ int main(int argc, char **argv)
         if (toupper(input[0]) != 'Y') exit(0);
     }
 
-    if ((fpout = fopen(outname,"wb")) == NULL)
-    {
-        fprintf(stderr, "Couldn't open output file %s!\n", outname);
-        exit(2);
-    }
-
-    if ((buffer = calloc(buffersize, sizeof(char))) == NULL)
-    {
-        fprintf(stderr, "Couldn't allocate buffer memory!\n");
-        exit(3);
-    }
-
     /* Use C64 PAL frequency as default if not set by an option */
     if (frequency == 0)
         frequency = C64PALFREQ;
 
     log_used_frequency(frequency);
 
-    init_border_colors();
+    if (strlen(inname) == 0) 
+    {
+        port = find_port(lptnum);
+        if (port == 0)
+        {
+            fprintf(stderr, "LPT%d doesn't exist on your machine!\n", lptnum);
+            exit(1);
+        }
+        else printf("Using port LPT%d at %04x\n",lptnum,port);
 
-    /* do the actual recording */
-    if (cable == ADAPTER)
-        bufferp = record_adapter(port, buffer);
-    else if (cable == X1541)
-        bufferp = record_x1541(port, buffer);
-    else /* (cable == XE1541) || (cable == XA1541) */
-        bufferp = record_xe1541(port, buffer);
-	
+        init_border_colors();
 
-    set_border_black();
-    outp(PELMASK, 0xff);
+        /* do the actual recording */
+        if (cable == ADAPTER)
+            bufferp = record_adapter(port, buffer);
+        else if (cable == X1541)
+            bufferp = record_x1541(port, buffer);
+        else /* (cable == XE1541) || (cable == XA1541) */
+            bufferp = record_xe1541(port, buffer);
+        
+
+        set_border_black();
+        outp(PELMASK, 0xff);
+    } 
+    else 
+    {
+        bufferp = read_raw_samples(inname, buffer, buffersize);
+        write_raw = 0;
+    }
+
+    if ((fpout = fopen(outname,"wb")) == NULL)
+    {
+        fprintf(stderr, "Couldn't open output file %s!\n", outname);
+        exit(2);
+    }
 
     // first pulselen is second value, discard <STOP> pulse
     pulsbytes = (bufferp-buffer)/2 - 2;
